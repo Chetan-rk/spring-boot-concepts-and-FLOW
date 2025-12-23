@@ -1,249 +1,331 @@
-2️⃣ Why do we write
-extends RuntimeException
+# Spring Boot Custom Exception Handling (Clean Notes)
 
-Meaning in plain English
+> **Goal of these notes:**
+> By just reading this document, you should clearly understand **WHY** we create custom exceptions, **HOW** messages flow from exception → handler → response, and **WHAT** each annotation/class is doing in Spring Boot.
 
-“My ResourceNotFoundException IS A type of RuntimeException.”
+---
 
-This gives your class all the powers of RuntimeException.
+## 1️⃣ Why Exception Handling is Important in Spring Boot
 
-❓ Why not extend Exception directly?
+Exception handling helps us:
 
-Because of checked vs unchecked exceptions.
+* Prevent application crashes
+* Return **clean and meaningful error responses**
+* Avoid messy `try-catch` blocks everywhere
+* Keep error handling **centralized and professional**
 
-Checked Exception (Exception)
+👉 In REST APIs, we never want raw stack traces or unclear errors.
 
-Compiler forces you to handle it
+---
 
-You must write throws or try-catch
+## 2️⃣ Custom Exception – `ResourceNotFoundException`
 
-Example:
+### What we create
 
-public void getEmployee() throws Exception {
-}
+* A package: `exceptions`
+* A class: `ResourceNotFoundException`
 
+```java
+public class ResourceNotFoundException extends RuntimeException {
 
-👎 Bad for REST APIs (too much boilerplate)
-
-Unchecked Exception (RuntimeException)
-
-Compiler does NOT force handling
-
-Can be thrown anywhere
-
-Perfect for APIs
-
-Example:
-
-throw new ResourceNotFoundException("Not found");
-
-
-✅ Clean
-✅ Simple
-✅ Standard Spring Boot practice
-
-That’s why 99% Spring Boot custom exceptions extend RuntimeException.
-
-3️⃣ Now the MOST CONFUSING PART 😄
-This constructor:
-public ResourceNotFoundException(String message) {
-    super(message);
-}
-
-
-Let’s break this line by line.
-
-4️⃣ What is a constructor?
-public ResourceNotFoundException(String message)
-
-
-This is a constructor, not a method.
-
-It is called when you create the object:
-
-new ResourceNotFoundException("Employee not found");
-
-
-So Java does:
-
-Create object
-
-Call constructor
-
-Pass "Employee not found" into message
-
-5️⃣ What is super(message)?
-
-This is the KEY 🔑
-
-super means:
-
-“Call the constructor of the parent class.”
-
-Parent class here = RuntimeException
-
-Let’s see RuntimeException’s constructor (simplified)
-
-Inside Java:
-
-public class RuntimeException extends Exception {
-    public RuntimeException(String message) {
+    public ResourceNotFoundException(String message) {
         super(message);
     }
 }
+```
 
+---
 
-And inside Exception:
+## 3️⃣ Why `extends RuntimeException`?
 
-public class Exception {
-    private String message;
+### Meaning in simple words
 
-    public Exception(String message) {
-        this.message = message;
-    }
+> **“My `ResourceNotFoundException` IS A type of `RuntimeException`.**
 
-    public String getMessage() {
-        return message;
-    }
-}
+### Checked vs Unchecked Exception
 
-6️⃣ What actually happens step-by-step
+#### ❌ Checked Exception (`Exception`)
 
-When this runs:
+* Compiler **forces handling**
+* Requires `throws` or `try-catch`
+* Adds boilerplate
 
-throw new ResourceNotFoundException("Employee not found with id 5");
+```java
+public void getEmployee() throws Exception {}
+```
 
-Step 1
-ResourceNotFoundException(String message)
+👉 Not ideal for REST APIs
 
+#### ✅ Unchecked Exception (`RuntimeException`)
 
-message = "Employee not found with id 5"
+* Compiler does **NOT** force handling
+* Can be thrown anywhere
+* Perfect for APIs
 
-Step 2
+```java
+throw new ResourceNotFoundException("Employee not found");
+```
+
+✔ Clean
+✔ Simple
+✔ Industry standard
+
+👉 That’s why **99% Spring Boot custom exceptions extend `RuntimeException`**
+
+---
+
+## 4️⃣ Constructor – Why It Exists
+
+```java
+public ResourceNotFoundException(String message)
+```
+
+### What is a constructor?
+
+* Called when object is created
+* Used to initialize data
+
+```java
+new ResourceNotFoundException("Employee not found with id 5");
+```
+
+Without constructor ❌
+
+* You cannot pass dynamic messages
+* No flexibility
+
+With constructor ✅
+
+* Dynamic messages
+* Clean error description
+
+---
+
+## 5️⃣ `super(message)` – MOST IMPORTANT PART 🔑
+
+```java
 super(message);
+```
 
+### What does `super` mean?
 
-Calls:
+> Call the **parent class constructor**
 
-RuntimeException(String message)
+Parent class = `RuntimeException`
 
-Step 3
+---
 
-RuntimeException calls:
+### Internal Java Flow (Simplified)
 
-Exception(String message)
+```java
+RuntimeException(String message) {
+    super(message);
+}
+```
 
-Step 4
+```java
+Exception(String message) {
+    this.message = message;
+}
+```
 
-Exception stores:
+### Step-by-step Flow
 
-this.message = "Employee not found with id 5";
+```java
+throw new ResourceNotFoundException("Employee not found with id 5");
+```
 
-Step 5
+1️⃣ Constructor receives message
+2️⃣ `super(message)` calls RuntimeException
+3️⃣ RuntimeException calls Exception
+4️⃣ Exception stores message internally
+5️⃣ `getMessage()` returns it later
 
-Later, when you do:
+💥 **That’s why `ex.getMessage()` works**
 
-ex.getMessage();
+---
 
+## 6️⃣ Why We DON’T Create Our Own `message` Variable
 
-Java returns:
+❌ Bad Practice
 
-"Employee not found with id 5"
+```java
+private String message;
+```
 
+Why?
 
-💥 THAT is why your GlobalExceptionHandler can access the message.
-2️⃣ What exactly does @Data give us?
+* Java already provides `message`
+* `getMessage()` already exists
+* Stack trace & cause handling already built-in
+
+👉 Reusing Java’s exception system = **best practice**
+
+---
+
+## 7️⃣ Throwing Exception Using `orElseThrow()`
+
+```java
+employeeRepository.findById(id)
+    .orElseThrow(() -> new ResourceNotFoundException(
+        "Employee not found with id " + id));
+```
+
+### What happens here?
+
+* `findById()` returns `Optional`
+* If value exists → return object
+* If NOT exists → throw exception
+
+🔥 Controller does NOT handle it
+🔥 Spring handles it globally
+
+---
+
+## 8️⃣ APIError Class (Error Response Structure)
+
+### Why APIError?
+
+Instead of random JSON, we want:
+
+```json
+{
+  "status": "NOT_FOUND",
+  "message": "Employee not found with id 5"
+}
+```
+
+### APIError Class
+
+```java
 @Data
+@Builder
+public class APIError {
+    private HttpStatus status;
+    private String message;
+}
+```
 
+---
 
-Generates:
+## 9️⃣ Why `@Data` is Needed (Important)
 
-getters
+### You thought:
 
-setters
+> We are not calling getters/setters, so @Data is not required
 
-toString()
+### You are **conceptually right** 👍
 
-equals()
+### BUT… Spring uses getters internally
 
-hashCode()
+When returning:
 
-So Spring can read fields safely when returning JSON.
+```java
+return new ResponseEntity<>(apiError, HttpStatus.NOT_FOUND);
+```
 
-3️⃣ Why @Builder in APIError?
+Spring:
 
-Your understanding 👇
+* Converts object → JSON
+* Uses getters via reflection
 
-Builder is used to build the APIError object in a fast and clean manner
+❗ Without getters:
 
-✅ 100% CORRECT
+* Empty JSON
+* Or serialization failure
 
-Instead of:
+👉 `@Data` generates:
 
+* Getters
+* Setters
+* `toString()`
+
+---
+
+## 🔟 Why `@Builder` is Used
+
+### Without Builder ❌
+
+```java
 APIError apiError = new APIError();
 apiError.setStatus(HttpStatus.NOT_FOUND);
 apiError.setMessage(ex.getMessage());
+```
 
+### With Builder ✅
 
-We write:
-
+```java
 APIError apiError = APIError.builder()
+    .status(HttpStatus.NOT_FOUND)
+    .message(ex.getMessage())
+    .build();
+```
+
+✔ Clean
+✔ Readable
+✔ Easy to extend
+✔ Professional
+
+---
+
+## 1️⃣1️⃣ Global Exception Handler
+
+### Annotation Used
+
+```java
+@RestControllerAdvice
+```
+
+### What it does
+
+* Listens to all exceptions
+* Applies to all controllers
+* Central error handling
+
+---
+
+## 1️⃣2️⃣ `@ExceptionHandler`
+
+```java
+@ExceptionHandler(ResourceNotFoundException.class)
+public ResponseEntity<APIError> handleResourceNotFoundException(
+        ResourceNotFoundException ex) {
+
+    APIError apiError = APIError.builder()
         .status(HttpStatus.NOT_FOUND)
         .message(ex.getMessage())
         .build();
 
-Why Builder is better
+    return new ResponseEntity<>(apiError, HttpStatus.NOT_FOUND);
+}
+```
 
-Cleaner
+### Human Language Meaning
 
-No setters chaining
+> “Whenever `ResourceNotFoundException` occurs anywhere, call this method.”
 
-Easy to extend later
+---
 
-Immutable-friendly design
+## 1️⃣3️⃣ Complete End-to-End Flow 🧠
 
-👉 Very professional API style
+1️⃣ Client calls API
+2️⃣ Controller → Service
+3️⃣ Data not found
+4️⃣ `orElseThrow()` throws exception
+5️⃣ Spring finds `@RestControllerAdvice`
+6️⃣ Matching `@ExceptionHandler` runs
+7️⃣ APIError is built
+8️⃣ ResponseEntity returned
+9️⃣ Client gets clean error response
 
-4️⃣ ex.getMessage() — where does it come from?
+---
 
-You said:
+## 1️⃣4️⃣ One-Line Exam / Interview Summary
 
-ex.getMessage is provided by the exception class mechanism
+> We extend `RuntimeException` to create an unchecked custom exception suitable for REST APIs. The constructor accepts a message and passes it to the parent class using `super(message)`, which stores the message inside Java’s exception system. This message is later retrieved using `getMessage()` inside a global exception handler to generate a clean API error response.
 
-✅ EXACTLY RIGHT
+---
 
-Flow recap:
-
-You passed message using super(message)
-
-Java’s Exception class stores it
-
-getMessage() is already defined in Throwable
-
-So:
-
-ex.getMessage()
-
-
-→ returns what you passed while throwing exception
-FLOW OF EXECUTION
-7️⃣ COMPLETE FLOW (Very Important)
-🧠 Remember this flow
-
-Client calls API
-
-Controller → Service
-
-Data NOT found
-
-orElseThrow() throws ResourceNotFoundException
-
-Spring finds @RestControllerAdvice
-
-Finds matching @ExceptionHandler
-
-Builds APIError
-
-Returns ResponseEntity
-
-Client receives proper error response
+✅ **These notes are copy-paste ready**
+✅ **Readable & revision-friendly**
+✅ **Interview + practical clarity guaranteed**
